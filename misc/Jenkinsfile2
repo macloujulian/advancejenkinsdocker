@@ -1,0 +1,32 @@
+node {
+   def gitcommit
+   stage('Verificacion SCM') {
+     checkout scm
+     sh "git rev-parse --short HEAD > .git/commit-id"
+     gitcommit = readFile('.git/commit-id').trim()
+   }
+   stage('test') {
+     def contenedortest = docker.image('node:4.6')
+     contenedortest.pull()
+     contenedortest.inside {
+       sh 'npm install --only=dev'
+       sh 'npm test'
+     }
+   }
+   stage('test with a DB') {
+     def mysql = docker.image('mysql').run("-e MYSQL_ALLOW_EMPTY_PASSWORD=yes") 
+     def myTestContainer = docker.image('node:4.6')
+     myTestContainer.pull()
+     myTestContainer.inside("--link ${mysql.id}:mysql") { // using linking, mysql will be available at host: mysql, port: 3306
+          sh 'npm install --only=dev' 
+          sh 'npm test'                     
+     }                                   
+     mysql.stop()
+   }
+   stage('Docker Build & Push') {
+     docker.withRegistry('https://registry.hub.docker.com', 'docker-hub') {
+      def nuestraapp = docker.build("macloujulian/nodejsapp:${gitcommit}", ".")
+      nuestraapp.push()
+     }
+   }
+}
